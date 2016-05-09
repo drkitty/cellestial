@@ -12,7 +12,7 @@ E = 2
 S = 3
 W = 4
 
-INIT = 0  # A, X, Y, Z, P <- 0 ; T <- M ; (P) <- INIT
+INIT = 0  # A, X, Y, Z, P <- 0 ; T <- M
 SET  = 1  # A <- imm
 ROT  = 2  # Z <- Y <- X <- A <- Z
 IN   = 3  # A <- (X)
@@ -25,16 +25,24 @@ INSN_COUNT = 8
 
 
 class Cell(object):
-    a = p = x = y = z = 0
-    t = M
-
     def __init__(self):
         self.mem = [INIT] * CELL_MEM_SIZE
+        self.stop()
 
     def __str__(self):
         return '<Cell: {:02X} {:02X} {:02X} {:02X}  {:02X}>'.format(
             self.a, self.x, self.y, self.z, self.t
         )
+
+    def __repr__(self):
+        return str(self)
+
+    def stop(self):
+        self.a = self.p = self.r = self.x = self.y = self.z = 0
+        self.t = M
+
+    def start(self):
+        self.r = 1
 
     @property
     def insn_str(self):
@@ -85,14 +93,17 @@ class World(object):
         chgs = []
         for x in range(self.xw):
             for y in range(self.yw):
-                if self.cells[x][y] is not None:
-                    chg = self.cell_step((x, y))
-                    if chg is not None:
-                        chgs.append(chg)
+                c = self.cells[x][y]
+                if c is None or c.r == 0:
+                    continue
+                chg = self.cell_step((x, y))
+                if chg is not None:
+                    chgs.append(chg)
         for chg in chgs:
-            c, addr, val = chg
-            c.mem[addr] = val
-
+            cc, addr, val = chg
+            cc.mem[addr] = val
+            if addr == 0:
+                cc.start()
 
     def cell_step(self, xy):
         x, y = xy
@@ -101,10 +112,7 @@ class World(object):
         c.inc_p()
 
         if insn == INIT:
-            cc = self.target((x, y))
-            cc.a = cc.x = cc.y = cc.z = cc.p = 0
-            cc.t = M
-            return (cc, 0, INIT)
+            self.target((x, y)).stop()
         elif insn == SET:
             c.a = c.mem[c.p]
             c.inc_p()
@@ -219,15 +227,24 @@ def test():
         BR,
     ]
     c.mem += [INIT] * (CELL_MEM_SIZE - len(c.mem))
+    c.start()
 
     cc = w.cells[1][2] = Cell()
 
+
     while True:
-        print(c)
-        print(c.insn_str)
-        #print(cc.mem)
+        print(w.cells)
         w.step()
-        sleep(0.1)
+
+    #while cc.mem[0] == 0:
+        #print(c)
+        #w.step()
+
+    #print("=" * 80)
+
+    #while True:
+        #print(cc)
+        #w.step()
 
 
 if __name__ == '__main__':
