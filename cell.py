@@ -71,6 +71,18 @@ class World(object):
         self.yw = yw
         self.cells = [[None] * xw for _ in range(yw)]
 
+    def __str__(self):
+        s = []
+        for x in range(self.xw):
+            for y in range(self.yw):
+                c = self.cells[x][y]
+                if c is None:
+                    s.append(" 00")
+                else:
+                    s.append(" {:02X}".format(c.p))
+            s.append("\n")
+        return "".join(s)
+
     def target(self, xy):
         x, y = xy
         c = self.cells[x][y]
@@ -140,9 +152,9 @@ class World(object):
 
 
 def test():
-    w = World((3, 3))
+    w = World((16, 16))
 
-    c = w.cells[1][1] = Cell()
+    c = w.cells[4][4] = Cell()
     c.mem = [
         # A X Y Z  T
 
@@ -229,22 +241,11 @@ def test():
     c.mem += [INIT] * (CELL_MEM_SIZE - len(c.mem))
     c.start()
 
-    cc = w.cells[1][2] = Cell()
-
 
     while True:
-        print(w.cells)
+        print(w)
         w.step()
-
-    #while cc.mem[0] == 0:
-        #print(c)
-        #w.step()
-
-    #print("=" * 80)
-
-    #while True:
-        #print(cc)
-        #w.step()
+        sleep(0.01)
 
 
 if __name__ == '__main__':
