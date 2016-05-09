@@ -6,28 +6,35 @@ from time import sleep
 
 CELL_MEM_SIZE = 256
 
-N = 0
-E = 1
-S = 2
-W = 3
-ME = 4
+M = 0
+N = 1
+E = 2
+S = 3
+W = 4
 
-SET  = 0  # A <- imm
-ROT  = 1  # Z <- Y <- X <- A <- Z
-IN   = 2  # A <- (X)
-OUT  = 3  # (X) <- A
-ADD  = 4  # A <- A + X
-AT   = 5  # T <- A
-BR   = 6  # P <- P + imm
-INIT = 7  # A, X, Y, Z, P <- 0 ; T <- ME ; (P) <- INIT
+INIT = 0  # A, X, Y, Z, P <- 0 ; T <- M ; (P) <- INIT
+SET  = 1  # A <- imm
+ROT  = 2  # Z <- Y <- X <- A <- Z
+IN   = 3  # A <- (X)
+OUT  = 4  # (X) <- A
+ADD  = 5  # A <- A + X
+AT   = 6  # T <- A
+BR   = 7  # P <- P + A if X == Y
+
+INSN_COUNT = 8
 
 
 class Cell(object):
     a = p = x = y = z = 0
-    t = ME
+    t = M
 
     def __init__(self):
         self.mem = [INIT] * CELL_MEM_SIZE
+
+    def __str__(self):
+        return '<Cell: {:02X} {:02X} {:02X} {:02X}  {:02X}>'.format(
+            self.a, self.x, self.y, self.z, self.t
+        )
 
     def inc_p(self):
         self.p = (self.p + 1) % CELL_MEM_SIZE
@@ -44,25 +51,28 @@ class World(object):
         x, y = xy
         c = self.cells[x][y]
         if c.t == N:
-            return (x, 0 if (y == self.yw - 1) else (y + 1))
+            tx, ty = (x, 0 if (y == self.yw - 1) else (y + 1))
         elif c.t == E:
-            return (0 if (x == self.xw - 1) else (x + 1), y)
+            tx, ty = (0 if (x == self.xw - 1) else (x + 1), y)
         elif c.t == S:
-            return (x, (self.yw - 1) if (y == 0) else (y - 1))
+            tx, ty = (x, (self.yw - 1) if (y == 0) else (y - 1))
         elif c.t == W:
-            return ((self.xw - 1) if (x == 0) else (x - 1), y)
-        else:  # ME
-            return (x, y)
+            tx, ty = ((self.xw - 1) if (x == 0) else (x - 1), y)
+        else:  # M
+            tx, ty = (x, y)
+        cc = self.cells[tx][ty]
+        if cc is None:
+            cc = self.cells[tx][ty] = Cell()
+        return cc
 
     def step(self):
         chgs = []
         for x in range(self.xw):
             for y in range(self.yw):
-                if self.cells[x][y] is None:
-                    continue
-                chg = self.cell_step((x, y))
-                if chg is not None:
-                    chgs.append(chg)
+                if self.cells[x][y] is not None:
+                    chg = self.cell_step((x, y))
+                    if chg is not None:
+                        chgs.append(chg)
         for chg in chgs:
             c, addr, val = chg
             c.mem[addr] = val
@@ -71,10 +81,15 @@ class World(object):
     def cell_step(self, xy):
         x, y = xy
         c = self.cells[x][y]
-        insn = c.mem[c.p]
+        insn = c.mem[c.p] % INSN_COUNT
         c.inc_p()
 
-        if insn == SET:
+        if insn == INIT:
+            cc = self.target((x, y))
+            cc.a = cc.x = cc.y = cc.z = cc.p = 0
+            cc.t = M
+            return (cc, 0, INIT)
+        elif insn == SET:
             c.a = c.mem[c.p]
             c.inc_p()
         elif insn == ROT:
@@ -84,28 +99,20 @@ class World(object):
             c.x = c.a
             c.a = temp
         elif insn == IN:
-            tx, ty = self.target((x, y))
-            target = self.cells[tx][ty]
-            if target is None:
-                c.a = INIT
-            else:
-                c.a = target.mem[c.x]
+            cc = self.target((x, y))
+            c.a = cc.mem[c.x]
         elif insn == OUT:
-            tx, ty = self.target((x, y))
-            target = self.cells[tx][ty]
-            if target is None:
-                target = self.cells[tx][ty] = Cell()
-            return (target, c.x, c.a)
+            cc = self.target((x, y))
+            return (cc, c.x, c.a)
         elif insn == ADD:
             c.a = (c.a + c.x) % CELL_MEM_SIZE
         elif insn == AT:
             c.t = c.a
         elif insn == BR:
-            c.p = (c.p + c.a) % CELL_MEM_SIZE
-        else:  # INIT
-            c.a = c.x = c.y = c.z = c.p = 0
-            c.t = ME
-            return (c, 0, INIT)
+            if c.x == c.y:
+                c.p = (c.p + c.a) % CELL_MEM_SIZE
+        else:
+            raise Exception("BUG")
 
 
 def test():
@@ -114,52 +121,92 @@ def test():
     c = w.cells[1][1] = Cell()
     c.mem = [
         # A X Y Z  T
-        # 0 . a 0  ME
-        SET, 4,
-        # 4 . a 0  ME
-        ROT,
-        # 0 4 . a  ME
+
+        # . . . .  M
         SET, 1,
-        # 1 4 . a  ME
+        AT,
+        # 1 . . .  N
+        INIT,
+        # 1 . . .  N
         ROT,
-        # a 1 4 .  ME
+        # . 1 . .  N
         ROT,
-        # . a 1 4  ME
+        ROT,
+
+        ROT,
+        ROT,
+        # . a . .  M
         IN,
-        # ? a 1 4  ME
+        # d a . .  M
         ROT,
-        # 4 ? a 1  ME
-        ROT,
-        # 1 4 ? a  ME
+        # . d a .  M
+        SET, N,
         AT,
-        # 1 4 ? a  E
+        # . d a .  N
         ROT,
-        # a 1 4 ?  E
         ROT,
-        # ? a 1 4  E
+        ROT,
+        # d a . .  N
         OUT,
-        # . a 1 4  E
-        ROT,
-        # 4 . a 1  E
+        # . a . .  N
+        SET, M,
         AT,
-        # 4 . a 1  ME
+        # . a . .  M
+        ROT, ROT,
+        # . . . a  M
+        SET, 1,
+        # 1 . . a  M
         ROT,
-        # 1 4 . a  ME
-        ROT,
-        # a 1 4 .  ME
+        # a 1 . .  M
         ADD,
-        # a 1 4 .  ME
+        # a . . .  M
         ROT,
-        # . a 1 4  ME
-        SET, CELL_MEM_SIZE - 1 - 15,
-        # f a 1 4  ME
+        # . a . .  M
+        SET, 0,
+        # 0 a . .  M
+        ROT,
+        # . 0 a .  M
+        SET, 6,
+        BR,
+        # . 0 a .  M
+        SET, 0,
+        # 0 0 a .  M
+        ROT,
+        # . 0 0 a  M
+        SET, CELL_MEM_SIZE - 33,
+        BR,
+
+        SET, 0,
+        # 0 . . .  M
+        ROT,
+        # . 0 . .  M
+        IN,
+        # d 0 . .  M
+        ROT,
+        # . d 0 .  M
+        SET, N,
+        AT,
+        # . d 0 .  N
+        ROT,
+        ROT,
+        ROT,
+        # d 0 . .  N
+        OUT,
+        # . 0 . .  N
+        SET, 0,
+        # 0 0 . .  N
+        ROT,
+        # . 0 0 .  N
+        SET, CELL_MEM_SIZE - 1,
         BR,
     ]
     c.mem += [INIT] * (CELL_MEM_SIZE - len(c.mem))
 
+    cc = w.cells[1][2] = Cell()
+
     while True:
-        print(c.a, c.x, c.y, c.z, c.t)
-        print(w.cells)
+        print(c)
+        print(cc.mem)
         w.step()
         sleep(0.1)
 
