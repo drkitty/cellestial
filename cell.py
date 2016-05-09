@@ -36,6 +36,22 @@ class Cell(object):
             self.a, self.x, self.y, self.z, self.t
         )
 
+    @property
+    def insn_str(self):
+        insn = self.mem[self.p] % INSN_COUNT
+        if insn == SET:
+            return "SET {}".format(self.mem[self.p + 1])
+        else:
+            return {
+                INIT: "INIT",
+                ROT: "ROT",
+                IN: "IN",
+                OUT: "OUT",
+                ADD: "ADD",
+                AT: "AT",
+                BR: "BR",
+            }[insn]
+
     def inc_p(self):
         self.p = (self.p + 1) % CELL_MEM_SIZE
 
@@ -122,14 +138,16 @@ def test():
     c.mem = [
         # A X Y Z  T
 
-        # . . . .  M
+        # . . . 0  M
         SET, 1,
         AT,
-        # 1 . . .  N
+        # 1 . . 0  N
         INIT,
-        # 1 . . .  N
+        # 1 . . 0  N
         ROT,
-        # . 1 . .  N
+        # 0 1 . .  N
+        AT,
+        # 0 1 . .  M
         ROT,
         ROT,
 
@@ -206,7 +224,8 @@ def test():
 
     while True:
         print(c)
-        print(cc.mem)
+        print(c.insn_str)
+        #print(cc.mem)
         w.step()
         sleep(0.1)
 
